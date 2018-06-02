@@ -1,0 +1,139 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "simple_lambda_cron.template - Create Simple CRON Jobs using Lambda",
+  "Parameters": {
+    "RoleName": {
+      "Default": "SimpleLambdaCron",
+      "Type": "String",
+      "Description": "Role Name OPTIONAL"
+    },
+     "CronExpression": {
+      "Type": "String",
+      "Description": "Cron Expression REQUIRED"
+    },
+     "CronSchedule": {
+      "Type": "String",
+      "Description": "Cron Schedule See: https://docs.aws.amazon.com/lambda/latest/dg/tutorial-scheduled-events-schedule-expressions.html"
+    }
+   },
+  "Conditions": {
+    "SetRoleName": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "RoleName"
+            },
+            ""
+          ]
+        }
+      ]
+     }
+   },
+  "Resources": {
+    "LambdaCronFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Handler": "index.lambda_handler",
+        "Role": { "Fn::GetAtt" : ["SimpleLambdaCron", "Arn"] },
+        "Code": {
+          "ZipFile":  { "Fn::Join": ["\n", [
+             "import subprocess",
+             "from datetime import date\n",
+             { "Fn::Join": ["",["region = '",{"Ref":"AWS::Region"},"'"]]},           
+             { "Fn::Join": ["",["source_account = '",{"Ref":"AWS::AccountId"},"'"]]},
+             "today = str(date.today().strftime('%Y%m%d'))\n",
+             "def lambda_handler(event, context):\n",             
+             "    import subprocess\n",
+             {
+                "Fn::Join": [
+                "",
+             [
+             "    result = subprocess.call(\"",
+              {"Ref": "CronExpression"},
+             "\", shell=True)"
+             ]]},              
+             "    return result" 
+        ]]}},
+        "Runtime": "python3.6",
+        "Timeout":"300"
+      }
+    },
+   "LambdaCronRule": {
+     "Type" : "AWS::Events::Rule",
+     "Properties" : {
+       "Name" : "SimpleLambdaCron",
+       "Description": "TriggerBackup",
+       "EventPattern": {
+         "source": [ "aws.route53" ]
+       },
+       "ScheduleExpression" : { "Ref":"CronSchedule" },
+       "State": "ENABLED",
+       "Targets": [{
+         "Arn": { "Fn::GetAtt": ["LambdaCronFunction", "Arn"] },
+         "Id": "index"
+       }]
+     }
+   },
+   "LambdaInvokePermission": {
+     "Type": "AWS::Lambda::Permission",
+     "Properties": {
+       "FunctionName" : { "Ref" : "LambdaCronFunction" },
+       "Action": "lambda:InvokeFunction",
+       "Principal": "events.amazonaws.com",
+       "SourceArn": { "Fn::GetAtt": ["LambdaCronRule","Arn"] }
+     }
+   },
+    "SimpleLambdaCron": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::If": [
+            "SetRoleName",
+            {
+              "Ref": "RoleName"
+            },
+            {
+              "Ref": "AWS::NoValue"
+            }
+          ]
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+     "Policies": [ {
+         "PolicyName": "inlinelambda",
+         "PolicyDocument": {
+            "Version" : "2012-10-17",
+            "Statement": [ {
+               "Effect": "Allow",
+               "Action": [
+                         "sts:AssumeRole",
+                         "logs:*",
+                         "s3:*"
+                ],
+               "Resource": "*"
+            } ]
+         }
+         }
+       ],
+      "ManagedPolicyArns": [
+        "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+      ]
+      }
+    }
+  }
+}
